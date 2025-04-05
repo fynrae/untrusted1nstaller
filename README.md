@@ -1,55 +1,119 @@
-# Untrusted1nstaller
+# 🔐 TrustedInstaller Privilege Escalation Console Scripts
 
-**Untrusted1nstaller** is a set of PowerShell scripts designed to launch applications under the TrustedInstaller security context on Windows. This tool leverages advanced techniques—such as process token manipulation and parent process inheritance—using the [NtObjectManager](https://github.com/googleprojectzero/sandbox-attacksurface-analysis-tools) module. This can be useful for system administrators, security researchers, or penetration testers needing to interact with protected system resources.
+![PowerShell](https://img.shields.io/badge/PowerShell-Scripts-blue) ![Security](https://img.shields.io/badge/Privilege%20Escalation-Advanced-red)
 
-> **Disclaimer:**  
-> **Use this tool at your own risk.** Modifying or running applications with TrustedInstaller privileges bypasses normal security protections and can potentially destabilize your system or expose it to security risks. It is intended solely for research, testing, or recovery purposes in a controlled environment. Always ensure you have proper backups before using this tool.
+## 📌 Description
+This project provides two advanced PowerShell scripts that demonstrate how to spawn processes under the security context of the `TrustedInstaller` service using the `NtObjectManager` module. These scripts are meant for **educational and administrative purposes only**.
 
----
-
-## Table of Contents
-
-- [Features](#features)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Scripts Overview](#scripts-overview)
-  - [untrusted1nstaller-runas.ps1](#untrusted1nstaller-runasps1)
-  - [untrusted1nstaller-console.ps1](#untrusted1nstaller-consoleps1)
-- [Usage](#usage)
-  - [Running an Application as TrustedInstaller](#running-an-application-as-trustedinstaller)
-  - [Launching a TrustedInstaller Command Console](#launching-a-trustedinstaller-command-console)
-- [Troubleshooting](#troubleshooting)
-- [Security Considerations](#security-considerations)
-- [License](#license)
+> ⚠️ **Warning**: These scripts require administrative privileges and the use of `SeDebugPrivilege`. Misuse can lead to system instability or security violations.
 
 ---
 
-## Features
+## 🧰 Files Included
 
-- **Run Any Application as TrustedInstaller:**  
-  The `untrusted1nstaller-runas.ps1` script accepts an application path as a parameter and launches it with the TrustedInstaller token.
+### `untrusted1nstaller-console.ps1`
+- Spawns a `cmd.exe` (or any application) as a child of the `TrustedInstaller` process.
+- Useful for quick testing and command line access under elevated context.
 
-- **TrustedInstaller Command Console:**  
-  The `untrusted1nstaller-console.ps1` script demonstrates launching a command prompt with TrustedInstaller privileges, displaying a simple test message ("pwned!") upon startup.
-
-- **Token & Process Manipulation:**  
-  The scripts use the [NtObjectManager](https://www.powershellgallery.com/packages/NtObjectManager) module to manipulate processes at a low level, requiring advanced privileges.
-
----
-
-## Requirements
-
-- **Operating System:** Windows (Vista or later)
-- **Privileges:** Must be run from an elevated (Administrator) PowerShell session.
-- **Modules:**
-  - [NtObjectManager](https://www.powershellgallery.com/packages/NtObjectManager)
-- **PowerShell Version:** PowerShell 5.1 or later is recommended.
-- **SeDebugPrivilege:** The scripts require that the user has SeDebugPrivilege enabled (available to administrators).
+### `untrusted1installer-runas.ps1`
+- Accepts an `ApplicationPath` as a parameter.
+- Gracefully checks the `TrustedInstaller` service status, starts it if necessary.
+- Launches any user-specified application under `TrustedInstaller` privileges.
 
 ---
 
-## Installation
+## 🔧 Requirements
+- **Windows** with PowerShell
+- **Administrator Rights**
+- **SeDebugPrivilege** (granted by default for Admins on most systems)
+- [`NtObjectManager`](https://www.powershellgallery.com/packages/NtObjectManager)
 
-1. **Clone or Download the Repository:**
-   ```powershell
-   git clone https://github.com/yourusername/untrusted1nstaller.git
+### 📦 Installing NtObjectManager
+```powershell
+Install-Module NtObjectManager -Scope CurrentUser -Force -SkipPublisherCheck
+```
+
+> You may need to bypass the PowerShell script execution policy:
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+---
+
+## 🚀 Usage Instructions
+
+### 1️⃣ `untrusted1nstaller-console.ps1`
+Launches a command prompt as TrustedInstaller.
+
+```powershell
+# Run as Administrator
+.\untrusted1nstaller-console.ps1
+```
+
+This script:
+- Starts the TrustedInstaller service if not running.
+- Uses `Get-NtProcess` to fetch the TrustedInstaller process.
+- Uses `New-Win32Process` to launch `cmd.exe` with a custom message.
+
+✅ Example Output:
+```plaintext
+Starting TrustedInstaller...
+Starting Command Line...
+Done!
+```
+
+You’ll get a new `cmd.exe` window running as TrustedInstaller.
+
+---
+
+### 2️⃣ `untrusted1installer-runas.ps1`
+Run any application with TrustedInstaller privileges.
+
+```powershell
+# Run as Administrator
+.\untrusted1installer-runas.ps1 -ApplicationPath "C:\Windows\System32\notepad.exe"
+```
+
+This script:
+- Validates the `TrustedInstaller` service is running.
+- Retrieves the `TrustedInstaller.exe` process.
+- Uses it as a parent to spawn the specified application.
+
+✅ Example Output:
+```plaintext
+Starting TrustedInstaller service...
+Launching application with TrustedInstaller privileges: C:\Windows\System32\notepad.exe
+Process started successfully.
+```
+
+---
+
+## 🛡️ Security Warning
+These scripts leverage high-level access to Windows internal mechanisms. Use them **only on systems you own or manage**. Unauthorized usage can be considered a violation of terms of service or even illegal in certain contexts.
+
+---
+
+## 🧪 Use Cases
+- Advanced system administration
+- Exploring Windows privilege boundaries
+
+---
+
+## 📄 License
+These scripts are open-source under the [MIT License](LICENSE). Use at your own risk.
+
+---
+
+## 📬 Feedback & Contributions
+Feel free to open issues or pull requests if you find bugs or want to improve the functionality.
+
+---
+
+## 🙏 Acknowledgement
+Special thanks to the creators and maintainers of the **NtObjectManager** module and the contributors in the **PowerShell security community**, whose knowledge and tools have made this kind of research and learning possible:
+
+- John Hammond : https://www.youtube.com/watch?v=Vj1uh89v-Sc
+- https://www.tiraniddo.dev/2017/08/the-art-of-becoming-trustedinstaller.html
+
+---
+
