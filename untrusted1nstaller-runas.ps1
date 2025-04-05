@@ -7,6 +7,9 @@ param (
 )
 
 Start-Transcript -Path "$env:TEMP\untrusted1nstaller-log.txt" -Force
+Write-Output "======================"
+Write-Output "  untrusted1nstaller "
+Write-Output "======================"
 
 Write-Output "Importing NtObjectManager..."
 Install-Module NtObjectManager -Scope CurrentUser -Force -SkipPublisherCheck
