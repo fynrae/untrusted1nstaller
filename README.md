@@ -1,4 +1,4 @@
-# 🔐 TrustedInstaller Privilege Escalation Console Scripts
+#🔐 untrusted1nstaller - TrustedInstaller Privilege Escalation Console Scripts
 
 ![PowerShell](https://img.shields.io/badge/PowerShell-Scripts-blue) ![Security](https://img.shields.io/badge/Privilege%20Escalation-Advanced-red)
 
