@@ -6,27 +6,29 @@ param (
     [string]$ApplicationPath
 )
 
-# Import the NtObjectManager module
+Start-Transcript -Path "$env:TEMP\untrusted1nstaller-log.txt" -Force
+
+Write-Output "Importing NtObjectManager..."
+Install-Module NtObjectManager -Scope CurrentUser -Force -SkipPublisherCheck
 Import-Module NtObjectManager -ErrorAction Stop
 
-# Ensure TrustedInstaller service is running
-if ((Get-Service -Name TrustedInstaller).Status -ne 'Running') {
-    Write-Output "Starting TrustedInstaller service..."
-    Start-Service -Name TrustedInstaller
-    # Wait a bit to allow the service to initialize
-    Start-Sleep -Seconds 5
-}
+# Start TrustedInstaller service
+Write-Output "Starting TrustedInstaller service..."
+sc.exe config TrustedInstaller binpath= "C:\Windows\servicing\TrustedInstaller.exe" | Out-Null
+sc.exe start TrustedInstaller | Out-Null
+Start-Sleep -Seconds 3
 
 # Get the TrustedInstaller process
-$p = Get-NtProcess -Name TrustedInstaller.exe | Select-Object -First 1
-
-if ($p -eq $null) {
-    Write-Error "Failed to obtain TrustedInstaller process."
+$p = Get-NtProcess TrustedInstaller.exe | Select-Object -First 1
+if (-not $p) {
+    Write-Error "Failed to get TrustedInstaller process."
+    Stop-Transcript
     exit 1
 }
 
-# Start the specified application as a child of the TrustedInstaller process
-Write-Output "Launching application with TrustedInstaller privileges: $ApplicationPath"
+# Construct full command to run inside a TI parent
+Write-Output "Launching: $ApplicationPath as TrustedInstaller"
 $proc = New-Win32Process $ApplicationPath -CreationFlags NewConsole -ParentProcess $p
 
-Write-Output "Process started successfully."
+Write-Output "Process launched successfully!"
+Stop-Transcript
