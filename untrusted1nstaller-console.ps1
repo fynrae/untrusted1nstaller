@@ -23,7 +23,9 @@ function LogError {
 
 Log "Importing NtObjectManager..."
 try {
-    Install-Module NtObjectManager -Scope CurrentUser -Force -SkipPublisherCheck -ErrorAction Stop | Out-Null
+    if (-not (Get-Module -ListAvailable -Name NtObjectManager)) {
+        Install-Module NtObjectManager -Scope CurrentUser -Force -SkipPublisherCheck -ErrorAction Stop | Out-Null
+    }
     Import-Module NtObjectManager -ErrorAction Stop
     LogSuccess "NtObjectManager module loaded."
 } catch {
@@ -36,15 +38,13 @@ try {
 Log "Restarting TrustedInstaller service..."
 try {
     sc.exe stop TrustedInstaller | Out-Null
-    Log "Waiting for service to stop..."
-    Start-Sleep -Seconds 2
+    Log "Stopped service."
 
     sc.exe config TrustedInstaller binpath= "C:\Windows\servicing\TrustedInstaller.exe" | Out-Null
     Log "Set binpath to default."
 
     sc.exe start TrustedInstaller | Out-Null
-    Log "Service started, waiting 3 seconds..."
-    Start-Sleep -Seconds 3
+    Log "Service started."
 } catch {
     LogError "Error restarting TrustedInstaller service: $_"
     Stop-Transcript
