@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace gui
@@ -11,9 +12,17 @@ namespace gui
         public Form1()
         {
             InitializeComponent();
-            // Uncomment the line below to list all embedded resources for debugging
-            // ListEmbeddedResources();
         }
+
+        // Import necessary Windows API functions for positioning the window
+        [DllImport("user32.dll")]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int width, int height, uint uFlags);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetConsoleWindow();
 
         private void RunPowerShellTI(string appPath)
         {
@@ -32,12 +41,40 @@ namespace gui
                 FileName = "powershell.exe",
                 Arguments = psCommand,
                 UseShellExecute = false,
-                CreateNoWindow = true
+                CreateNoWindow = false,  // Make the PowerShell window visible
+                WindowStyle = ProcessWindowStyle.Normal  // Open the window normally (not minimized or hidden)
             };
 
             try
             {
-                Process.Start(psi);
+                Process powerShellProcess = Process.Start(psi);
+
+                if (powerShellProcess != null)
+                {
+                    // Wait for the PowerShell process to initialize
+                    System.Threading.Thread.Sleep(500); // You can adjust this time
+
+                    // Get the window handle of the newly started process
+                    IntPtr hWnd = powerShellProcess.MainWindowHandle;
+
+                    if (hWnd != IntPtr.Zero)
+                    {
+                        // Get screen width and height
+                        int screenWidth = Screen.PrimaryScreen.WorkingArea.Width;
+                        int screenHeight = Screen.PrimaryScreen.WorkingArea.Height;
+
+                        // Set the desired window size (e.g., 600x400)
+                        int width = 600;
+                        int height = 400;
+
+                        // Calculate the position to center the window
+                        int x = (screenWidth - width) / 2;
+                        int y = (screenHeight - height) / 2;
+
+                        // Set the window position and size
+                        SetWindowPos(hWnd, IntPtr.Zero, x, y, width, height, 0);
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -100,17 +137,6 @@ namespace gui
             else
             {
                 MessageBox.Show("Please enter a valid path to an executable.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            }
-        }
-
-        private void ListEmbeddedResources()
-        {
-            var assembly = Assembly.GetExecutingAssembly();
-            var resourceNames = assembly.GetManifestResourceNames();
-
-            foreach (var resourceName in resourceNames)
-            {
-                MessageBox.Show(resourceName);
             }
         }
     }
