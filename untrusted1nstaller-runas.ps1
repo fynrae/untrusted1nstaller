@@ -1,4 +1,4 @@
-#Requires -RunAsAdministrator
+﻿#Requires -RunAsAdministrator
 #Requires -Modules NtObjectManager
 
 param (
@@ -6,46 +6,124 @@ param (
     [string]$ApplicationPath
 )
 
-Start-Transcript -Path "$env:TEMP\untrusted1nstaller-log.txt" -Force
-Write-Output "======================"
-Write-Output "  untrusted1nstaller "
-Write-Output "======================`n"
+function Log {
+    param([string]$msg)
+    Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') [INFO]  $msg"
+}
 
-Write-Output "[*] Importing NtObjectManager..."
-Install-Module NtObjectManager -Scope CurrentUser -Force -SkipPublisherCheck | Out-Null
-Import-Module NtObjectManager -ErrorAction Stop
+function LogError {
+    param([string]$msg)
+    Write-Error "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') [ERROR] $msg"
+}
 
-# Start TI service
-Write-Output "[*] Restarting TrustedInstaller service..."
-sc.exe stop TrustedInstaller | Out-Null
-Start-Sleep -Seconds 2
-sc.exe config TrustedInstaller binpath= "C:\Windows\servicing\TrustedInstaller.exe" | Out-Null
-sc.exe start TrustedInstaller | Out-Null
-Start-Sleep -Seconds 3
+function LogStep {
+    param([string]$msg)
+    Write-Output "`n$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') [STEP]  $msg"
+}
 
-# Get actual TrustedInstaller PID
-Write-Output "[*] Locating TrustedInstaller service process..."
-$tiPID = (Get-CimInstance Win32_Service -Filter "Name='TrustedInstaller'").ProcessId
-if (-not $tiPID -or $tiPID -eq 0) {
-    Write-Error "[-] TrustedInstaller process not found. Service may not have started correctly."
+# Begin transcript
+$logPath = "$env:TEMP\untrusted1nstaller-log.txt"
+Start-Transcript -Path $logPath -Force
+
+LogStep "Initializing untrusted1nstaller run"
+Log "Script invoked as: $($MyInvocation.MyCommand.Definition)"
+Log "Current Directory: $(Get-Location)"
+Log "Running User: $([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)"
+Log "User SID: $((New-Object System.Security.Principal.NTAccount((whoami))).Translate([System.Security.Principal.SecurityIdentifier]).Value)"
+Log "Command Line Argument: $ApplicationPath"
+Log "Temporary Log File: $logPath"
+
+# Step 1: Import NtObjectManager
+LogStep "Importing NtObjectManager module"
+try {
+    Log "Attempting to install NtObjectManager (if not already installed)..."
+    Install-Module NtObjectManager -Scope CurrentUser -Force -SkipPublisherCheck | Out-Null
+    Log "Importing module into session..."
+    Import-Module NtObjectManager -ErrorAction Stop
+    Log "NtObjectManager module successfully imported."
+} catch {
+    LogError "Failed to import NtObjectManager. Details: $_"
     Stop-Transcript
     exit 1
 }
 
-$p = Get-NtProcess | Where-Object { $_.ProcessId -eq $tiPID }
-if (-not $p) {
-    Write-Error "[-] Could not get NT object for TrustedInstaller process (PID: $tiPID)."
+# Step 2: Restart TrustedInstaller service
+LogStep "Restarting TrustedInstaller service"
+try {
+    Log "Attempting to stop TrustedInstaller..."
+    $stopResult = sc.exe stop TrustedInstaller
+    Log "sc stop output:`n$stopResult"
+    Start-Sleep -Seconds 2
+
+    Log "Resetting binary path to default..."
+    $configResult = sc.exe config TrustedInstaller binpath= "C:\Windows\servicing\TrustedInstaller.exe"
+    Log "sc config output:`n$configResult"
+
+    Log "Attempting to start TrustedInstaller..."
+    $startResult = sc.exe start TrustedInstaller
+    Log "sc start output:`n$startResult"
+
+    Log "Sleeping for 3 seconds to allow startup..."
+    Start-Sleep -Seconds 3
+} catch {
+    LogError "Could not restart TrustedInstaller service. Exception: $_"
     Stop-Transcript
     exit 1
 }
 
-# Launch application
-Write-Output "[*] Launching: $ApplicationPath as TrustedInstaller..."
+# Step 3: Find TrustedInstaller PID
+LogStep "Querying TrustedInstaller process ID"
+try {
+    $tiService = Get-CimInstance Win32_Service -Filter "Name='TrustedInstaller'"
+    $tiPID = $tiService.ProcessId
+    Log "Service State: $($tiService.State), PID: $tiPID"
+
+    if (-not $tiPID -or $tiPID -eq 0) {
+        throw "TrustedInstaller service returned invalid PID: $tiPID"
+    }
+} catch {
+    LogError "Failed to query TrustedInstaller service details: $_"
+    Stop-Transcript
+    exit 1
+}
+
+# Step 4: Get NT Process object
+LogStep "Acquiring NT process object for TrustedInstaller (PID: $tiPID)"
+try {
+    $p = Get-NtProcess | Where-Object { $_.ProcessId -eq $tiPID }
+    if (-not $p) {
+        throw "Get-NtProcess did not return a process object for PID $tiPID"
+    }
+
+    Log "NT Process Retrieved: Name=$($p.Name), PID=$($p.ProcessId), Session=$($p.SessionId)"
+    Log "Executable Path: $($p.Win32ImagePath)"
+    Log "Token User: $($p.Token.User)"
+    Log "Token Integrity Level: $($p.Token.IntegrityLevel)"
+    Log "Token Elevation: $($p.Token.Elevated)"
+} catch {
+    LogError "Failed to retrieve NT process for PID ${tiPID}: $_"
+    Stop-Transcript
+    exit 1
+}
+
+# Step 5: Launch application
+LogStep "Launching target application as TrustedInstaller"
+Log "Requested Command: $ApplicationPath"
+
 try {
     $proc = New-Win32Process $ApplicationPath -CreationFlags NewConsole -ParentProcess $p
-    Write-Output "[+] Process launched successfully!"
+    Log "[+] Process successfully launched."
+    Log "    → PID: $($proc.ProcessId)"
+    Log "    → Handle: $($proc.Handle)"
 } catch {
-    Write-Error "[-] Failed to launch process: $_"
+    LogError "Failed to spawn process as TrustedInstaller: $_"
+    Stop-Transcript
+    exit 1
 }
+
+# Wrap up
+LogStep "Execution complete."
+Log "Check if the launched process (PID $($proc.ProcessId)) is running in Task Manager or Process Hacker."
+Log "Log file stored at: $logPath"
 
 Stop-Transcript
