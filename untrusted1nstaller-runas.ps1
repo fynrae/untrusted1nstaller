@@ -1,129 +1,105 @@
-﻿#Requires -RunAsAdministrator
+#Requires -RunAsAdministrator
 #Requires -Modules NtObjectManager
 
-param (
-    [Parameter(Mandatory = $true)]
-    [string]$ApplicationPath
-)
+$TIUX_VERSION = "1.0.0"
 
-function Log {
-    param([string]$msg)
+function Log($msg) {
     Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') [INFO]  $msg"
 }
-
-function LogError {
-    param([string]$msg)
+function LogError($msg) {
     Write-Error "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') [ERROR] $msg"
 }
-
-function LogStep {
-    param([string]$msg)
+function LogStep($msg) {
     Write-Output "`n$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') [STEP]  $msg"
 }
+function Check-Admin {
+    $currentIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($currentIdentity)
+    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        LogError "This script must be run as Administrator."
+        exit 1
+    }
+}
 
-# Begin transcript
-$logPath = "$env:TEMP\untrusted1nstaller-log.txt"
+Check-Admin
+
+if ($Args.Count -eq 1 -and ($Args[0] -eq "--version" -or $Args[0] -eq "-v")) {
+    Write-Host "tiux version $TIUX_VERSION"
+    exit 0
+}
+if ($Args.Count -lt 1) {
+    Write-Host "Usage: tiux <ApplicationPath> or tiux --version"
+    exit 1
+}
+
+$ApplicationPath = $Args -join " "
+
+try {
+    $resolved = Resolve-Path -Path $ApplicationPath -ErrorAction Stop
+    $ApplicationPath = $resolved.Path
+} catch {
+    if (-not $ApplicationPath.EndsWith(".exe")) {
+        try {
+            $resolved = Resolve-Path -Path ($ApplicationPath + ".exe") -ErrorAction Stop
+            $ApplicationPath = $resolved.Path
+        } catch {
+            LogError "Could not find file: $ApplicationPath"
+            exit 1
+        }
+    } else {
+        LogError "Could not find file: $ApplicationPath"
+        exit 1
+    }
+}
+
+$logPath = "$env:TEMP\tiux-log.txt"
 Start-Transcript -Path $logPath -Force
 
-LogStep "Initializing untrusted1nstaller run"
-Log "Script invoked as: $($MyInvocation.MyCommand.Definition)"
-Log "Current Directory: $(Get-Location)"
-Log "Running User: $([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)"
-Log "User SID: $((New-Object System.Security.Principal.NTAccount((whoami))).Translate([System.Security.Principal.SecurityIdentifier]).Value)"
-Log "Command Line Argument: $ApplicationPath"
-Log "Temporary Log File: $logPath"
+LogStep "Initializing tiux run"
+Log "ApplicationPath: $ApplicationPath"
 
-# Step 1: Import NtObjectManager
-LogStep "Importing NtObjectManager module"
 try {
-    Log "Attempting to install NtObjectManager (if not already installed)..."
-    Install-Module NtObjectManager -Scope CurrentUser -Force -SkipPublisherCheck | Out-Null
-    Log "Importing module into session..."
+    if (-not (Get-Module -ListAvailable -Name NtObjectManager)) {
+        Log "NtObjectManager not found. Installing..."
+        Install-Module NtObjectManager -Scope CurrentUser -Force -SkipPublisherCheck | Out-Null
+    }
     Import-Module NtObjectManager -ErrorAction Stop
-    Log "NtObjectManager module successfully imported."
+    Log "NtObjectManager successfully imported."
 } catch {
-    LogError "Failed to import NtObjectManager. Details: $_"
+    LogError "Failed to load NtObjectManager: $_"
     Stop-Transcript
     exit 1
 }
 
-# Step 2: Restart TrustedInstaller service
-LogStep "Restarting TrustedInstaller service"
 try {
-    Log "Attempting to stop TrustedInstaller..."
-    $stopResult = sc.exe stop TrustedInstaller
-    Log "sc stop output:`n$stopResult"
-    Start-Sleep -Seconds 2
-
-    Log "Resetting binary path to default..."
-    $configResult = sc.exe config TrustedInstaller binpath= "C:\Windows\servicing\TrustedInstaller.exe"
-    Log "sc config output:`n$configResult"
-
-    Log "Attempting to start TrustedInstaller..."
-    $startResult = sc.exe start TrustedInstaller
-    Log "sc start output:`n$startResult"
-
-    Log "Sleeping for 3 seconds to allow startup..."
-    Start-Sleep -Seconds 3
+    sc.exe stop TrustedInstaller | Out-Null
+    sc.exe config TrustedInstaller binpath= "C:\Windows\servicing\TrustedInstaller.exe" | Out-Null
+    sc.exe start TrustedInstaller | Out-Null
 } catch {
-    LogError "Could not restart TrustedInstaller service. Exception: $_"
+    LogError "Could not restart TrustedInstaller: $_"
     Stop-Transcript
     exit 1
 }
 
-# Step 3: Find TrustedInstaller PID
-LogStep "Querying TrustedInstaller process ID"
 try {
-    $tiService = Get-CimInstance Win32_Service -Filter "Name='TrustedInstaller'"
-    $tiPID = $tiService.ProcessId
-    Log "Service State: $($tiService.State), PID: $tiPID"
-
-    if (-not $tiPID -or $tiPID -eq 0) {
-        throw "TrustedInstaller service returned invalid PID: $tiPID"
-    }
-} catch {
-    LogError "Failed to query TrustedInstaller service details: $_"
-    Stop-Transcript
-    exit 1
-}
-
-# Step 4: Get NT Process object
-LogStep "Acquiring NT process object for TrustedInstaller (PID: $tiPID)"
-try {
+    $tiPID = (Get-CimInstance Win32_Service -Filter "Name='TrustedInstaller'").ProcessId
+    if (-not $tiPID) { throw "No PID for TrustedInstaller" }
     $p = Get-NtProcess | Where-Object { $_.ProcessId -eq $tiPID }
-    if (-not $p) {
-        throw "Get-NtProcess did not return a process object for PID $tiPID"
-    }
-
-    Log "NT Process Retrieved: Name=$($p.Name), PID=$($p.ProcessId), Session=$($p.SessionId)"
-    Log "Executable Path: $($p.Win32ImagePath)"
-    Log "Token User: $($p.Token.User)"
-    Log "Token Integrity Level: $($p.Token.IntegrityLevel)"
-    Log "Token Elevation: $($p.Token.Elevated)"
+    if (-not $p) { throw "Could not get NT process object" }
 } catch {
-    LogError "Failed to retrieve NT process for PID ${tiPID}: $_"
+    LogError "Failed to acquire TrustedInstaller process: $_"
     Stop-Transcript
     exit 1
 }
-
-# Step 5: Launch application
-LogStep "Launching target application as TrustedInstaller"
-Log "Requested Command: $ApplicationPath"
 
 try {
     $proc = New-Win32Process $ApplicationPath -CreationFlags NewConsole -ParentProcess $p
-    Log "[+] Process successfully launched."
-    Log "    → PID: $($proc.ProcessId)"
-    Log "    → Handle: $($proc.Handle)"
+    Log "Process launched → PID: $($proc.ProcessId)"
 } catch {
-    LogError "Failed to spawn process as TrustedInstaller: $_"
+    LogError "Failed to launch process: $_"
     Stop-Transcript
     exit 1
 }
 
-# Wrap up
-LogStep "Execution complete."
-Log "Check if the launched process (PID $($proc.ProcessId)) is running in Task Manager or Process Hacker."
-Log "Log file stored at: $logPath"
-
+Log "Done. Log at $logPath"
 Stop-Transcript
