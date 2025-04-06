@@ -36,8 +36,13 @@ Log "Temporary Log File: $logPath"
 # Step 1: Import NtObjectManager
 LogStep "Importing NtObjectManager module"
 try {
-    Log "Attempting to install NtObjectManager (if not already installed)..."
-    Install-Module NtObjectManager -Scope CurrentUser -Force -SkipPublisherCheck | Out-Null
+    Log "Checking if NtObjectManager is already installed..."
+    # Check if the module is already installed
+    $module = Get-Module -ListAvailable NtObjectManager
+    if (-not $module) {
+        Log "NtObjectManager not found. Installing module..."
+        Install-Module NtObjectManager -Scope CurrentUser -Force -SkipPublisherCheck | Out-Null
+    }
     Log "Importing module into session..."
     Import-Module NtObjectManager -ErrorAction Stop
     Log "NtObjectManager module successfully imported."
@@ -53,7 +58,6 @@ try {
     Log "Attempting to stop TrustedInstaller..."
     $stopResult = sc.exe stop TrustedInstaller
     Log "sc stop output:`n$stopResult"
-    Start-Sleep -Seconds 2
 
     Log "Resetting binary path to default..."
     $configResult = sc.exe config TrustedInstaller binpath= "C:\Windows\servicing\TrustedInstaller.exe"
@@ -62,9 +66,6 @@ try {
     Log "Attempting to start TrustedInstaller..."
     $startResult = sc.exe start TrustedInstaller
     Log "sc start output:`n$startResult"
-
-    Log "Sleeping for 3 seconds to allow startup..."
-    Start-Sleep -Seconds 3
 } catch {
     LogError "Could not restart TrustedInstaller service. Exception: $_"
     Stop-Transcript

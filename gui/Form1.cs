@@ -42,7 +42,7 @@ namespace gui
                 Arguments = psCommand,
                 UseShellExecute = false,
                 CreateNoWindow = false,  // Make the PowerShell window visible
-                WindowStyle = ProcessWindowStyle.Normal  // Open the window normally (not minimized or hidden)
+                WindowStyle = ProcessWindowStyle.Normal
             };
 
             try
@@ -51,29 +51,11 @@ namespace gui
 
                 if (powerShellProcess != null)
                 {
-                    // Wait for the PowerShell process to initialize
-                    System.Threading.Thread.Sleep(500); // You can adjust this time
-
-                    // Get the window handle of the newly started process
-                    IntPtr hWnd = powerShellProcess.MainWindowHandle;
-
-                    if (hWnd != IntPtr.Zero)
+                    powerShellProcess.EnableRaisingEvents = true;
+                    powerShellProcess.Exited += (sender, e) =>
                     {
-                        // Get screen width and height
-                        int screenWidth = Screen.PrimaryScreen.WorkingArea.Width;
-                        int screenHeight = Screen.PrimaryScreen.WorkingArea.Height;
-
-                        // Set the desired window size (e.g., 600x400)
-                        int width = 600;
-                        int height = 400;
-
-                        // Calculate the position to center the window
-                        int x = (screenWidth - width) / 2;
-                        int y = (screenHeight - height) / 2;
-
-                        // Set the window position and size
-                        SetWindowPos(hWnd, IntPtr.Zero, x, y, width, height, 0);
-                    }
+                        MessageBox.Show("PowerShell process finished.");
+                    };
                 }
             }
             catch (Exception ex)
@@ -81,6 +63,7 @@ namespace gui
                 MessageBox.Show($"Failed to run as TrustedInstaller:\n{ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
+
 
         private string? ExtractEmbeddedScript(string resourceName)
         {
